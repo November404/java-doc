@@ -5,6 +5,22 @@ import lombok.extern.slf4j.Slf4j;
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
+import java.io.CharArrayWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.Reader;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.security.KeyFactory;
@@ -12,7 +28,6 @@ import java.security.MessageDigest;
 import java.security.Security;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
-import java.util.Base64;
 
 /**
  * 加密类
@@ -370,7 +385,7 @@ public class SecurityUtils {
             if (publicKey != null) {
                 try {
                     // 对公钥解密
-                    byte[] keyBytes = Base64.getDecoder().decode(publicKey);
+                    byte[] keyBytes = java.util.Base64.getDecoder().decode(publicKey);
                     // 取得公钥
                     X509EncodedKeySpec x509KeySpec = new X509EncodedKeySpec(keyBytes);
                     KeyFactory keyFactory = KeyFactory.getInstance("RSA");
@@ -398,7 +413,7 @@ public class SecurityUtils {
             if (privateKey != null) {
                 try {
                     // 对密钥解密
-                    byte[] keyBytes = Base64.getDecoder().decode(privateKey.getBytes());
+                    byte[] keyBytes = java.util.Base64.getDecoder().decode(privateKey.getBytes());
                     // 取得私钥
                     PKCS8EncodedKeySpec pkcs8KeySpec = new PKCS8EncodedKeySpec(keyBytes);
                     KeyFactory keyFactory = KeyFactory.getInstance("RSA");
@@ -702,5 +717,290 @@ public class SecurityUtils {
         }
 
         return iRet;
+    }
+
+    /**
+     * The type Base 64.
+     *
+     * @author November
+     * @since 2022 -01-05
+     */
+    public static class Base64 {
+        /**
+         * 编码字符串
+         *
+         * @param data 源字符串
+         * @return String string
+         */
+        public static String encode(String data) {
+            return new String(encode(data.getBytes()));
+        }
+
+        /**
+         * 解码字符串
+         *
+         * @param data 源字符串
+         * @return String string
+         */
+        public static String decode(String data) {
+            return new String(decode(data.toCharArray()));
+        }
+
+
+        /**
+         * 编码byte[]
+         *
+         * @param data 源数组
+         * @return char[] char [ ]
+         */
+        public static char[] encode(byte[] data) {
+            char[] out = new char[((data.length + 2) / 3) * 4];
+            for (int i = 0, index = 0; i < data.length; i += 3, index += 4) {
+                boolean quad = false;
+                boolean trip = false;
+
+                int val = (0xFF & (int) data[i]);
+                val <<= 8;
+                if ((i + 1) < data.length) {
+                    val |= (0xFF & (int) data[i + 1]);
+                    trip = true;
+                }
+                val <<= 8;
+                if ((i + 2) < data.length) {
+                    val |= (0xFF & (int) data[i + 2]);
+                    quad = true;
+                }
+                out[index + 3] = alphabet[(quad ? (val & 0x3F) : 64)];
+                val >>= 6;
+                out[index + 2] = alphabet[(trip ? (val & 0x3F) : 64)];
+                val >>= 6;
+                out[index + 1] = alphabet[val & 0x3F];
+                val >>= 6;
+                out[index + 0] = alphabet[val & 0x3F];
+            }
+            return out;
+        }
+
+        /**
+         * 解码
+         *
+         * @param data 编码后的字符数组
+         * @return byte[] byte [ ]
+         */
+        public static byte[] decode(char[] data) {
+
+            int tempLen = data.length;
+            for (int ix = 0; ix < data.length; ix++) {
+                if ((data[ix] > 255) || codes[data[ix]] < 0) {
+                    --tempLen; // ignore non-valid chars and padding
+                }
+            }
+            // 计算所需长度:
+            // 每 4 个有效 base64 字符对应 3 个字节
+            // 如果有 3 个额外的 base64 字符，则加 2 个字节,
+            // 或者如果有 2 个额外的字节，则加 1 个字节.
+            int len = (tempLen / 4) * 3;
+            if ((tempLen % 4) == 3) {
+                len += 2;
+            }
+            if ((tempLen % 4) == 2) {
+                len += 1;
+
+            }
+            byte[] out = new byte[len];
+
+            int shift = 0; // 多余位存储在 accum 中
+            int accum = 0; // 多余的位
+            int index = 0;
+
+            // 遍历整个数组（不使用 'tempLen' 值）
+            for (int ix = 0; ix < data.length; ix++) {
+                int value = (data[ix] > 255) ? -1 : codes[data[ix]];
+
+                if (value >= 0) { // 跳过非代码
+                    accum <<= 6; // 位每次向上移动 6
+                    shift += 6; // 循环，新的位被放入
+                    accum |= value; // 在底部.
+                    if (shift >= 8) { // 每当有 8 个或更多移位时,
+                        shift -= 8; // 把它们写出来（从顶部开始，留下任何
+                        out[index++] = // 下一次迭代的底部多余.
+                                (byte) ((accum >> shift) & 0xff);
+                    }
+                }
+            }
+
+            // 如果还有什么问题，我们现在就必须扔掉!
+            if (index != out.length) {
+                throw new Error("Miscalculated data length (wrote " + index
+                        + " instead of " + out.length + ")");
+            }
+
+            return out;
+        }
+
+        /**
+         * 编码文件
+         *
+         * @param file 源文件
+         * @throws IOException the io exception
+         */
+        public static void encode(File file) throws IOException {
+            if (!file.exists()) {
+                System.exit(0);
+            } else {
+                byte[] decoded = readBytes(file);
+                char[] encoded = encode(decoded);
+                writeChars(file, encoded);
+            }
+            file = null;
+        }
+
+        /**
+         * 解码文件。
+         *
+         * @param file 源文件
+         * @throws IOException the io exception
+         */
+        public static void decode(File file) throws IOException {
+            if (!file.exists()) {
+                System.exit(0);
+            } else {
+                char[] encoded = readChars(file);
+                byte[] decoded = decode(encoded);
+                writeBytes(file, decoded);
+            }
+            file = null;
+        }
+
+        // code characters for values 0..63
+        private static final char[] alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+                .toCharArray();
+
+        // lookup table for converting base64 characters to value in range 0..63
+        private static byte[] codes = new byte[256];
+
+        static {
+            for (int i = 0; i < 256; i++) {
+                codes[i] = -1;
+            }
+            for (int i = 'A'; i <= 'Z'; i++) {
+                codes[i] = (byte) (i - 'A');
+            }
+
+            for (int i = 'a'; i <= 'z'; i++) {
+                codes[i] = (byte) (26 + i - 'a');
+            }
+            for (int i = '0'; i <= '9'; i++) {
+                codes[i] = (byte) (52 + i - '0');
+            }
+            codes['+'] = 62;
+            codes['/'] = 63;
+        }
+
+        private static byte[] readBytes(File file) throws IOException {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] b;
+            InputStream fis = null;
+            InputStream is = null;
+            try {
+                fis = new FileInputStream(file);
+                is = new BufferedInputStream(fis);
+                int count;
+                byte[] buf = new byte[16384];
+                while ((count = is.read(buf)) != -1) {
+                    if (count > 0) {
+                        baos.write(buf, 0, count);
+                    }
+                }
+                b = baos.toByteArray();
+            } finally {
+                try {
+                    if (fis != null) {
+                        fis.close();
+                    }
+                    if (is != null) {
+                        is.close();
+                    }
+                    baos.close();
+                } catch (Exception e) {
+                    log.warn("Close stream failed. case:{}.", e.getMessage());
+                }
+            }
+            return b;
+        }
+
+        private static char[] readChars(File file) throws IOException {
+            CharArrayWriter caw = new CharArrayWriter();
+            Reader fr = null;
+            Reader in = null;
+            try {
+                fr = new FileReader(file);
+                in = new BufferedReader(fr);
+                int count = 0;
+                char[] buf = new char[16384];
+                while ((count = in.read(buf)) != -1) {
+                    if (count > 0) {
+                        caw.write(buf, 0, count);
+                    }
+                }
+            } finally {
+                try {
+                    caw.close();
+                    if (in != null) {
+                        in.close();
+                    }
+                    if (fr != null) {
+                        fr.close();
+                    }
+                } catch (Exception e) {
+                    log.warn("Close stream failed. case:{}.", e.getMessage());
+                }
+            }
+            return caw.toCharArray();
+        }
+
+        private static void writeBytes(File file, byte[] data) throws IOException {
+            OutputStream fos = null;
+            OutputStream os = null;
+            try {
+                fos = new FileOutputStream(file);
+                os = new BufferedOutputStream(fos);
+                os.write(data);
+            } finally {
+                try {
+                    if (os != null) {
+                        os.close();
+                    }
+                    if (fos != null) {
+                        fos.close();
+                    }
+                } catch (Exception e) {
+                    log.warn("Close stream failed. case:{}.", e.getMessage());
+                }
+            }
+        }
+
+        private static void writeChars(File file, char[] data) throws IOException {
+            Writer fos = null;
+            Writer os = null;
+            try {
+                fos = new FileWriter(file);
+                os = new BufferedWriter(fos);
+                os.write(data);
+
+            } finally {
+                try {
+                    if (os != null) {
+                        os.close();
+                    }
+                    if (fos != null) {
+                        fos.close();
+                    }
+                } catch (Exception e) {
+                    log.warn("Close stream failed. case:{}.", e.getMessage());
+                }
+            }
+        }
+
     }
 }
